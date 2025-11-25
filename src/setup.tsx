@@ -1,6 +1,6 @@
-import { ActionPanel, Action, List, Icon, showToast, Toast, openExtensionPreferences, Clipboard } from "@raycast/api";
+import { Action, ActionPanel, Clipboard, Icon, List, showToast, Toast } from "@raycast/api";
 import { execSync } from "child_process";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
 interface SetupStep {
   id: string;
@@ -45,9 +45,30 @@ export default function Setup() {
 
   const checkHomebrew = async () => {
     try {
-      execSync("which brew", { stdio: "ignore" });
-      updateStepStatus("homebrew", "completed");
-      checkM1DDC();
+      // Try multiple ways to detect Homebrew
+      const possiblePaths = [
+        "/opt/homebrew/bin/brew", // Apple Silicon
+        "/usr/local/bin/brew", // Intel
+        "brew", // PATH
+      ];
+
+      let found = false;
+      for (const path of possiblePaths) {
+        try {
+          execSync(`${path} --version`, { stdio: "ignore" });
+          found = true;
+          break;
+        } catch {
+          continue;
+        }
+      }
+
+      if (found) {
+        updateStepStatus("homebrew", "completed");
+        checkM1DDC();
+      } else {
+        updateStepStatus("homebrew", "failed");
+      }
     } catch {
       updateStepStatus("homebrew", "failed");
     }
@@ -57,16 +78,19 @@ export default function Setup() {
     updateStepStatus("m1ddc", "checking");
     try {
       const possiblePaths = [
-        "m1ddc",
-        "/opt/homebrew/bin/m1ddc",
-        "/usr/local/bin/m1ddc",
+        "/opt/homebrew/bin/m1ddc", // Apple Silicon Homebrew
+        "/usr/local/bin/m1ddc", // Intel Homebrew
+        "m1ddc", // PATH
       ];
 
       let found = false;
+      // let workingPath = "";
+
       for (const path of possiblePaths) {
         try {
-          execSync(`${path} --help`, { stdio: "ignore" });
+          execSync(`"${path}" --help`, { stdio: "ignore", timeout: 5000 });
           found = true;
+          // workingPath = path;
           break;
         } catch {
           continue;
@@ -84,10 +108,34 @@ export default function Setup() {
     }
   };
 
+  const findM1DDC = () => {
+    const possiblePaths = ["/opt/homebrew/bin/m1ddc", "/usr/local/bin/m1ddc", "m1ddc"];
+
+    for (const path of possiblePaths) {
+      try {
+        execSync(`"${path}" --help`, { stdio: "ignore", timeout: 2000 });
+        return path;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  };
+
   const checkConnection = async () => {
     updateStepStatus("connection", "checking");
     try {
-      const output = execSync("m1ddc display list", { encoding: "utf-8" });
+      const m1ddcPath = findM1DDC();
+      if (!m1ddcPath) {
+        updateStepStatus("connection", "failed");
+        return;
+      }
+
+      const output = execSync(`"${m1ddcPath}" display list`, {
+        encoding: "utf-8",
+        timeout: 10000,
+      });
+
       if (output.includes("Display") || output.trim().length > 0) {
         updateStepStatus("connection", "completed");
         testMonitorControl();
@@ -102,7 +150,17 @@ export default function Setup() {
   const testMonitorControl = async () => {
     updateStepStatus("test", "checking");
     try {
-      execSync("m1ddc get luminance", { stdio: "ignore" });
+      const m1ddcPath = findM1DDC();
+      if (!m1ddcPath) {
+        updateStepStatus("test", "failed");
+        return;
+      }
+
+      execSync(`"${m1ddcPath}" get luminance`, {
+        stdio: "ignore",
+        timeout: 10000,
+      });
+
       updateStepStatus("test", "completed");
       await showToast({
         style: Toast.Style.Success,
@@ -115,7 +173,9 @@ export default function Setup() {
   };
 
   const installHomebrew = async () => {
-    await Clipboard.copy('/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"');
+    await Clipboard.copy(
+      '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
+    );
     await showToast({
       style: Toast.Style.Success,
       title: "Command Copied",
@@ -124,7 +184,10 @@ export default function Setup() {
   };
 
   const installM1DDC = async () => {
-    await Clipboard.copy("brew install m1ddc");
+    const command =
+      process.arch === "arm64" ? "/opt/homebrew/bin/brew install m1ddc" : "/usr/local/bin/brew install m1ddc";
+
+    await Clipboard.copy(command);
     await showToast({
       style: Toast.Style.Success,
       title: "Command Copied",
@@ -171,24 +234,14 @@ export default function Setup() {
             title={step.title}
             subtitle={step.description}
             icon={{ source: getStatusIcon(step.status), tintColor: getStatusColor(step.status) }}
-            accessories={[
-              { text: step.status === "checking" ? "Checking..." : step.status },
-            ]}
+            accessories={[{ text: step.status === "checking" ? "Checking..." : step.status }]}
             actions={
               <ActionPanel>
                 {step.id === "homebrew" && step.status === "failed" && (
-                  <Action
-                    title="Install Homebrew"
-                    icon={Icon.Download}
-                    onAction={installHomebrew}
-                  />
+                  <Action title="Install Homebrew" icon={Icon.Download} onAction={installHomebrew} />
                 )}
                 {step.id === "m1ddc" && step.status === "failed" && (
-                  <Action
-                    title="Install m1ddc"
-                    icon={Icon.Download}
-                    onAction={installM1DDC}
-                  />
+                  <Action title="Install M1ddc" icon={Icon.Download} onAction={installM1DDC} />
                 )}
                 {step.status === "completed" && (
                   <Action
