@@ -27,7 +27,9 @@ export class MonitorControl {
 
     for (const path of possiblePaths) {
       try {
-        execSync(`${path} --help`, { stdio: "ignore" });
+        // For paths with spaces or special characters, we need to handle them properly
+        const command = path.includes(" ") ? `"${path}"` : path;
+        execSync(`${command} --help`, { stdio: "ignore" });
         ddcCommandPath = path;
         return path;
       } catch {
@@ -49,7 +51,7 @@ export class MonitorControl {
         ? ["set", "luminance", brightness.toString()]
         : ["-d", "1", "-b", brightness.toString()];
 
-      execSync(`"${ddcCommand}" ${args.join(" ")}`);
+      execSync(`${ddcCommand} ${args.join(" ")}`);
       this.currentBrightness = brightness;
       await showHUD(`✨ Brightness: ${brightness}%`);
     } catch (error) {
@@ -77,7 +79,7 @@ export class MonitorControl {
       const ddcCommand = await this.getDDCCommand();
       const args = isAppleSilicon ? ["get", "luminance"] : ["-d", "1", "-b", "?"];
 
-      const output = execSync(`"${ddcCommand}" ${args.join(" ")}`, { encoding: "utf-8" });
+      const output = execSync(`${ddcCommand} ${args.join(" ")}`, { encoding: "utf-8" });
 
       // Parse brightness from output
       const brightness = isAppleSilicon
@@ -101,7 +103,7 @@ export class MonitorControl {
 
       const args = isAppleSilicon ? ["set", "contrast", contrast.toString()] : ["-d", "1", "-c", contrast.toString()];
 
-      execSync(`"${ddcCommand}" ${args.join(" ")}`);
+      execSync(`${ddcCommand} ${args.join(" ")}`);
       await showHUD(`📺 Contrast: ${contrast}%`);
     } catch (error) {
       await showToast({
@@ -119,14 +121,14 @@ export class MonitorControl {
 
       if (isAppleSilicon) {
         // Reset RGB channels to 100%
-        execSync(`"${ddcCommand}" set red 100`);
-        execSync(`"${ddcCommand}" set green 100`);
-        execSync(`"${ddcCommand}" set blue 100`);
+        execSync(`${ddcCommand} set red 100`);
+        execSync(`${ddcCommand} set green 100`);
+        execSync(`${ddcCommand} set blue 100`);
         await showHUD("🎨 Colors reset to normal");
       } else {
         // Reset color temperature for ddcctl
         const args = ["-d", "1", "-r", "0"]; // Disable red shift
-        execSync(`"${ddcCommand}" ${args.join(" ")}`);
+        execSync(`${ddcCommand} ${args.join(" ")}`);
         await showHUD("🎨 Color temperature reset");
       }
     } catch (error) {
@@ -134,6 +136,30 @@ export class MonitorControl {
         style: Toast.Style.Failure,
         title: "Color Reset Failed",
         message: `Failed to reset colors`,
+      });
+      throw error;
+    }
+  }
+
+  static async toggleEyeCare(): Promise<void> {
+    try {
+      const ddcCommand = await this.getDDCCommand();
+
+      if (isAppleSilicon) {
+        // Apply eye care by reducing blue light - set blue to 70%
+        execSync(`${ddcCommand} set blue 70`);
+        await showHUD("🌅 Eye care mode enabled");
+      } else {
+        // For ddcctl, use blue reduction if supported
+        const args = ["-d", "1", "-b", "70"]; // Reduce blue channel
+        execSync(`${ddcCommand} ${args.join(" ")}`);
+        await showHUD("🌅 Eye care mode enabled");
+      }
+    } catch (error) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Eye Care Failed",
+        message: `Failed to enable eye care mode`,
       });
       throw error;
     }
