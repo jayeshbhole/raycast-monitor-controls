@@ -5,6 +5,7 @@
   "description": "Control monitor brightness, contrast, and color settings",
   "icon": "extension-icon.png",
   "author": "jayeshbhole",
+  "version": "1.0.0",
   "license": "MIT",
   "commands": [
     {
